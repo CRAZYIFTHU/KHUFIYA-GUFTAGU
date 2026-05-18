@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Khufiya Guftagu</title>
+  <style>
+    :root { --bg:#0b141a; --panel:#111b21; --chat:#202c33; --accent:#25d366; --text:#e9edef; --muted:#8696a0; }
+    *{box-sizing:border-box;font-family:Inter,system-ui,-apple-system,sans-serif}
+    body{margin:0;background:var(--bg);color:var(--text);height:100vh;display:grid;place-items:center}
+    .app{width:min(980px,96vw);height:min(760px,95vh);display:grid;grid-template-columns:320px 1fr;border-radius:12px;overflow:hidden;box-shadow:0 10px 32px #0008}
+    .sidebar{background:var(--panel);border-right:1px solid #2a3942;padding:16px}
+    .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.2rem;margin-bottom:14px}
+    .dot{width:12px;height:12px;background:var(--accent);border-radius:50%}
+    .card{background:#1f2c34;border-radius:10px;padding:12px;margin-bottom:12px}
+    .card h3{margin:0 0 8px;font-size:.95rem}
+    input,textarea,button{width:100%;border-radius:8px;border:1px solid #2a3942;background:#111b21;color:var(--text);padding:10px}
+    textarea{min-height:92px;resize:vertical}
+    button{background:var(--accent);color:#001b0f;border:0;font-weight:700;cursor:pointer;margin-top:8px}
+    .muted{color:var(--muted);font-size:.85rem;line-height:1.4}
+    .chat{background:linear-gradient(#0b141a90,#0b141a90),radial-gradient(circle at top right,#233138,#111b21);display:flex;flex-direction:column}
+    .top{padding:14px 18px;border-bottom:1px solid #2a3942;font-weight:600}
+    .messages{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+    .msg{max-width:80%;padding:10px 12px;border-radius:10px;line-height:1.4;white-space:pre-wrap}
+    .sent{align-self:flex-end;background:#005c4b}
+    .recv{align-self:flex-start;background:#202c33}
+    .composer{padding:12px;border-top:1px solid #2a3942;display:flex;gap:10px}
+    .composer textarea{min-height:56px;flex:1}
+    .composer button{width:120px;margin:0}
+    code{font-size:.8rem;word-break:break-all;color:#d1f4cc}
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="dot"></span> KHUFIYA GUFTAGU</div>
+      <div class="card">
+        <h3>Session Key</h3>
+        <button id="genKey">Generate End-to-End Key</button>
+        <p class="muted">This demo uses <strong>AES-GCM</strong> via Web Crypto to encrypt text before it appears in chat.</p>
+      </div>
+      <div class="card">
+        <h3>Encrypted Payload</h3>
+        <p class="muted">Cipher text (Base64) for the latest sent message:</p>
+        <code id="cipher">No encrypted message yet.</code>
+      </div>
+    </aside>
+
+    <section class="chat">
+      <header class="top">Private chat • End-to-End Encrypted</header>
+      <div id="messages" class="messages">
+        <div class="msg recv">Welcome to <b>Khufiya Guftagu</b> 🔐<br/>Generate a key, then send secure messages.</div>
+      </div>
+      <div class="composer">
+        <textarea id="input" placeholder="Type a message"></textarea>
+        <button id="send">Send</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const state = { key: null };
+    const messages = document.getElementById('messages');
+    const cipher = document.getElementById('cipher');
+    const input = document.getElementById('input');
+
+    const toB64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const fromB64 = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+
+    async function generateKey() {
+      state.key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+      addMsg('recv', '✅ New session key generated. Messages are now encrypted end-to-end.');
+    }
+
+    async function encryptMessage(text) {
+      if (!state.key) throw new Error('Generate key first');
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encoded = new TextEncoder().encode(text);
+      const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, state.key, encoded);
+      return `${toB64(iv)}:${toB64(encrypted)}`;
+    }
+
+    async function decryptMessage(payload) {
+      const [ivB64, dataB64] = payload.split(':');
+      const iv = fromB64(ivB64);
+      const data = fromB64(dataB64);
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, state.key, data);
+      return new TextDecoder().decode(plain);
+    }
+
+    function addMsg(type, content) {
+      const div = document.createElement('div');
+      div.className = `msg ${type}`;
+      div.innerHTML = content;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+    }
+
+    async function send() {
+      const text = input.value.trim();
+      if (!text) return;
+      try {
+        const payload = await encryptMessage(text);
+        cipher.textContent = payload;
+        addMsg('sent', text);
+        input.value = '';
+
+        const echoPlain = await decryptMessage(payload);
+        setTimeout(() => addMsg('recv', `Echo (decrypted): ${echoPlain}`), 300);
+      } catch (err) {
+        addMsg('recv', `⚠️ ${err.message}`);
+      }
+    }
+
+    document.getElementById('genKey').addEventListener('click', generateKey);
+    document.getElementById('send').addEventListener('click', send);
+    input.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') send();
+    });
+  </script>
+</body>
+</html>
